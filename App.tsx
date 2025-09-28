@@ -129,7 +129,7 @@ const App: React.FC = () => {
 
         try {
             // Using a more reliable CORS proxy to fetch from any URL.
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToFetch)}`;
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(urlToFetch)}`;
             const response = await fetch(proxyUrl);
             
             if (!response.ok) {
