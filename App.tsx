@@ -113,57 +113,89 @@ const App: React.FC = () => {
     }, [processZipFile]);
     
     const handleUrlSubmit = useCallback(async (rawUrl: string) => {
-        setGameState('processing');
-        setError(null);
+  setGameState('processing');
+  setError(null);
 
-        let urlToFetch = rawUrl.trim();
-        const gdriveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-        const match = urlToFetch.match(gdriveRegex);
+  let urlToFetch = rawUrl.trim();
+  const originalUrl = urlToFetch;
 
-        if (match && match[1]) {
-            const fileId = match[1];
-            urlToFetch = `https://drive.google.com/uc?export=download&id=${fileId}`;
-        }
-        
-        setTestUrl(rawUrl.trim()); // Store the original, user-facing URL
+  // Helper: cover several Drive URL patterns
+  const normalizeGoogleDriveUrl = (u: string) => {
+    // patterns:
+    // https://drive.google.com/file/d/<id>/view?usp=sharing
+    // https://drive.google.com/open?id=<id>
+    // https://drive.google.com/uc?id=<id>&export=download
+    // https://drive.google.com/drive/folders/<folderId>  -> not supported
+    const fileIdMatch = u.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+                      || u.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+                      || u.match(/\/uc\?id=([a-zA-Z0-9_-]+)/);
+    if (fileIdMatch && fileIdMatch[1]) {
+      return `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+    }
+    return null;
+  };
 
-        try {
-            // Using a more reliable CORS proxy to fetch from any URL.
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlToFetch)}`;
-            const response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                let errorHint = `Status: ${response.status} ${response.statusText}.`;
-                if (rawUrl.includes('drive.google.com')) {
-                    errorHint += ' For Google Drive links, please ensure the sharing permission is set to "Anyone with the link". Private files cannot be accessed.'
-                }
-                throw new Error(`Failed to fetch file from URL. ${errorHint}`);
-            }
-            
-            const blob = await response.blob();
-            
-            if (blob.type.includes('html')) {
-                let errorHint = 'The URL may be incorrect, private, or point to a webpage instead of a direct file link.';
-                 if (rawUrl.includes('drive.google.com')) {
-                    errorHint = 'This can happen with Google Drive if the file is private (please set sharing to "Anyone with the link") or if it is too large and requires a "virus scan" confirmation page. Please ensure it is a direct, public download link.';
-                }
-                throw new Error(`Failed to download the file. ${errorHint}`);
-            }
+  // If it's a google drive link, normalize
+  if (urlToFetch.includes('drive.google.com')) {
+    const normalized = normalizeGoogleDriveUrl(urlToFetch);
+    if (normalized) {
+      urlToFetch = normalized;
+    }
+    // else keep original (in case it's some non standard link)
+  }
 
-            // Heuristic check for zip file, as Content-Type might not be reliable
-            if (!blob.type.includes('zip') && !rawUrl.trim().endsWith('.zip')) {
-                 console.warn('Warning: The file from the URL does not appear to be a ZIP file, but we will attempt to process it anyway.');
-            }
+  setTestUrl(originalUrl); // keep original for shareable link
 
-            await processZipFile(blob);
+  try {
+    // Try fetching the file directly (no third-party proxy)
+    // NOTE: If Google Drive doesn't give CORS headers, the browser may block this request.
+    const response = await fetch(urlToFetch, {
+      method: 'GET',
+      // credentials: 'include', // DO NOT enable unless you expect cookies (not recommended)
+    });
 
-        } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while fetching the URL.';
-            setError(errorMessage);
-            setGameState('error');
-            console.error(err);
-        }
-    }, [processZipFile]);
+    // If fetch itself succeeded but the server returned an HTML page (Drive's virus-scan/confirm page etc),
+    // treat it as failure — we expect a binary blob (zip).
+    if (!response.ok) {
+      let errorHint = `Status: ${response.status} ${response.statusText}.`;
+      if (originalUrl.includes('drive.google.com')) {
+        errorHint += ' Ensure the file is shared "Anyone with the link" (public).';
+      }
+      throw new Error(`Failed to fetch file from URL. ${errorHint}`);
+    }
+
+    // Get blob
+    const blob = await response.blob();
+
+    // If we unexpectedly received HTML, it's likely a Drive confirmation/landing page
+    if (blob.type.includes('html')) {
+      let errorHint = 'The URL returned HTML (not a binary file).';
+      if (originalUrl.includes('drive.google.com')) {
+        errorHint = 'Google Drive returned an HTML page — the file may be private or too large (requires confirmation). Make sure sharing is "Anyone with the link" and try again, or use a server-side proxy/Drive API.';
+      }
+      throw new Error(`Failed to download the file. ${errorHint}`);
+    }
+
+    // Basic heuristic for zip
+    if (!blob.type.includes('zip') && !originalUrl.toLowerCase().endsWith('.zip')) {
+      console.warn('Warning: the downloaded blob does not appear to be a zip file (Content-Type mismatch). Trying to process anyway.');
+    }
+
+    // If we reach here, forward blob to processZipFile
+    await processZipFile(blob);
+
+  } catch (err) {
+    // If CORS blocked the request, browsers typically throw a TypeError with no useful message.
+    // Detect that and provide a clearer hint.
+    let msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'Failed to fetch' || msg === 'NetworkError when attempting to fetch resource.' || msg === 'TypeError: Failed to fetch') {
+      msg = 'Browser blocked the cross-origin request (CORS). For Google Drive, ensure the file is shared "Anyone with the link". If that does not help, you will need a server-side proxy or to use the Google Drive API to download the file.';
+    }
+    setError(msg);
+    setGameState('error');
+    console.error(err);
+  }
+}, [processZipFile]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
