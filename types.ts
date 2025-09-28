@@ -60,3 +60,11 @@ export interface FrameData {
   originalWidth: number;
   originalHeight: number;
 }
+
+export interface LeaderboardEntry {
+  email: string;
+  score: number;
+  totalPossible: number;
+  time: number;
+  timestamp: string;
+}
