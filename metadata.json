@@ -1,0 +1,5 @@
+{
+  "name": "Interactive Test Player",
+  "description": "An application to play interactive tests from a ZIP file containing image frames and a JSON manifest. Users can click hotspots and fill in inputs to navigate through the test.",
+  "requestFramePermissions": []
+}
