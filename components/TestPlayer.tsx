@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { FrameData, BoxType, InputBox, HotspotBox } from '../types';
+import { FrameData, BoxType, InputBox, HotspotBox, LeaderboardEntry } from '../types';
 import TestFramePlayer, { TestFramePlayerRef } from './TestFramePlayer';
-import { ChevronLeftIcon, ChevronRightIcon, ShareIcon, ClockIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, ShareIcon, ClockIcon, TrophyIcon } from './icons';
 
 interface TestPlayerProps {
   frames: FrameData[];
   onExitTest: () => void;
   shareableLink?: string;
+  testUrl?: string | null;
 }
 
 interface UserAnswer {
@@ -23,7 +24,55 @@ interface SequenceState {
     nextOrder: number;
 }
 
-export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shareableLink }) => {
+// IMPORTANT: Leaderboard functionality requires a backend endpoint.
+// 1. Create a Google Apps Script Web App.
+// 2. It should handle a POST request to add a score and a GET request to fetch scores.
+// 3. Replace the placeholder URL below with your actual deployed Web App URL.
+const GOOGLE_SHEET_WEB_APP_URL = `https://script.google.com/macros/s/AKfycbwgEnUUGRvjOYnt46yoxEUFXw8yTMfwa9JS3rSUETyyYMyJT2CjpMmTG4QlSwdcrIDC/exec`;
+
+const maskEmail = (email?: string): string => {
+    if (!email || !email.includes('@')) return 'Anonymous';
+    const [name, domain] = email.split('@');
+    if (name.length <= 3) return `${name[0]}***@${domain}`;
+    return `${name.substring(0, 3)}***@${domain}`;
+};
+
+const LeaderboardDisplay: React.FC<{ data: LeaderboardEntry[], currentUserEmail: string, formatTime: (t: number) => string }> = ({ data, currentUserEmail, formatTime }) => (
+    <div className="w-full mt-4 p-4 md:p-6 bg-gray-800 rounded-lg shadow-lg border border-gray-700">
+        <h3 className="text-2xl font-bold text-center mb-4 text-purple-400 flex items-center justify-center gap-2">
+            <TrophyIcon /> Leaderboard
+        </h3>
+        <div className="overflow-x-auto max-h-80">
+            <table className="w-full text-left min-w-[400px]">
+                <thead className="sticky top-0 bg-gray-800">
+                    <tr className="border-b-2 border-gray-600">
+                        <th className="p-2 font-semibold text-gray-300">Rank</th>
+                        <th className="p-2 font-semibold text-gray-300">Player</th>
+                        <th className="p-2 font-semibold text-gray-300 text-right">Score</th>
+                        <th className="p-2 font-semibold text-gray-300 text-right">Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {data.length > 0 ? data.map((entry, index) => (
+                        <tr key={index} className={`border-b border-gray-700 ${entry.email === currentUserEmail ? 'bg-purple-900/50' : ''}`}>
+                            <td className="p-3 font-bold">{index + 1}</td>
+                            <td className="p-3">{maskEmail(entry.email)}</td>
+                            <td className="p-3 text-right font-mono">{entry.score} / {entry.totalPossible}</td>
+                            <td className="p-3 text-right font-mono">{formatTime(entry.time)}</td>
+                        </tr>
+                    )) : (
+                        <tr>
+                            <td colSpan={4} className="text-center p-4 text-gray-400">No scores yet. Be the first!</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
+
+
+export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shareableLink, testUrl }) => {
   const [currentFrameIdx, setCurrentFrameIdx] = useState(0);
   const [userAnswers, setUserAnswers] = useState<Record<string, UserAnswer>>(
     () => frames.reduce((acc, frame) => {
@@ -41,6 +90,14 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   const [sequenceState, setSequenceState] = useState<Record<string, SequenceState>>({});
   const [elapsedTime, setElapsedTime] = useState(0);
   const [testStarted, setTestStarted] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  
+  const [isSubmittingScore, setIsSubmittingScore] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[] | null>(null);
+  const [isFetchingLeaderboard, setIsFetchingLeaderboard] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+
   const framePlayerRef = useRef<TestFramePlayerRef>(null);
 
   useEffect(() => {
@@ -56,7 +113,7 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
   }, [showResults, testStarted]);
 
   const currentFrameData = frames[currentFrameIdx];
-  const currentUserAnswerForFrame = userAnswers[currentFrameData.id];
+  const currentUserAnswerForFrame = userAnswers[currentFrameData.id] || { inputs: {}, hotspotsClicked: {} };
   
   const handleMistakeOccurred = useCallback(() => {
     if (showResults || !currentFrameData) return;
@@ -115,14 +172,18 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     const clickedHotspot = box as HotspotBox;
 
     const recordClick = () => {
-         setUserAnswers(prev => ({
-            ...prev,
-            [currentFrameData.id]: {
-                ...prev[currentFrameData.id],
-                hotspotsClicked: { ...prev[currentFrameData.id].hotspotsClicked, [boxId]: true },
-            },
-        }));
-    };
+  setUserAnswers(prev => ({
+    ...prev,
+    [currentFrameData.id]: {
+      ...(prev[currentFrameData.id] || { inputs: {}, hotspotsClicked: {} }),
+      hotspotsClicked: { 
+          ...((prev[currentFrameData.id] || {}).hotspotsClicked || {}), 
+          [boxId]: true 
+      },
+    },
+  }));
+  };
+
 
     if (!isSequential) {
         recordClick();
@@ -231,6 +292,79 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     return `${minutes}:${seconds}`;
   };
 
+  const fetchLeaderboard = useCallback(async () => {
+    if (!testUrl || GOOGLE_SHEET_WEB_APP_URL === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
+        return;
+    }
+    setIsFetchingLeaderboard(true);
+    setLeaderboardError(null);
+    try {
+        const url = new URL(GOOGLE_SHEET_WEB_APP_URL);
+        url.searchParams.append('action', 'getLeaderboard');
+        url.searchParams.append('testUrl', testUrl);
+        const proxyUrl = `https://file-proxy-cwma.onrender.com/proxy?url=${encodeURIComponent(url.toString())}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('Failed to fetch leaderboard data.');
+        
+        const result = await response.json();
+        if (result.success && Array.isArray(result.data)) {
+            setLeaderboardData(result.data);
+        } else {
+            throw new Error(result.message || 'Invalid leaderboard data format.');
+        }
+    } catch (err) {
+        console.error("Leaderboard fetch failed:", err);
+        setLeaderboardError("Could not load the leaderboard.");
+    } finally {
+        setIsFetchingLeaderboard(false);
+    }
+  }, [testUrl]);
+
+  useEffect(() => {
+    if (showResults && userEmail && testUrl && !leaderboardData && !isSubmittingScore && !submissionError) {
+        const submitScore = async () => {
+    if (!testUrl) return;
+
+    setIsSubmittingScore(true);
+    setSubmissionError(null);
+
+    try {
+        // Build query parameters for the Google Apps Script
+        const params = new URLSearchParams({
+            action: 'addScore',
+            email: userEmail,
+            score: score.toString(),
+            totalPossible: totalPossible.toString(),
+            time: elapsedTime.toString(),
+            testUrl: testUrl,
+            timestamp: new Date().toISOString()
+        });
+
+        // Use your proxy URL
+        const proxyUrl = `https://file-proxy-cwma.onrender.com/proxy?url=${encodeURIComponent(GOOGLE_SHEET_WEB_APP_URL + '?' + params.toString())}`;
+
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error("Server responded with an error.");
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.message || "Failed to submit score.");
+
+        // Fetch updated leaderboard
+        await fetchLeaderboard();
+
+    } catch (err) {
+        console.error("Score submission failed:", err);
+        setSubmissionError(err instanceof Error ? err.message : "An unknown error occurred.");
+    } finally {
+        setIsSubmittingScore(false);
+    }
+};
+
+        submitScore();
+    }
+  }, [showResults, userEmail, testUrl, score, totalPossible, elapsedTime, fetchLeaderboard, leaderboardData, isSubmittingScore, submissionError]);
+
+
   if (!currentFrameData) {
     return (
       <div className="p-4 text-red-500 flex flex-col items-center justify-center h-full">
@@ -256,20 +390,32 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
     <div className="w-full h-full flex flex-col items-center p-2 md:p-4" role="application">
       {!testStarted ? (
         <div className="flex-grow flex items-center justify-center">
-          <div className="max-w-2xl text-center bg-gray-800 p-12 rounded-2xl shadow-2xl border border-gray-700">
+          <div className="max-w-2xl w-full text-center bg-gray-800 p-8 sm:p-12 rounded-2xl shadow-2xl border border-gray-700">
             <h2 className="text-4xl font-extrabold text-gray-100 mb-4">
               Ready to Begin?
             </h2>
             <p className="text-lg text-gray-300 mb-8 leading-relaxed">
-              This is an interactive test. Follow the on-screen prompts by clicking hotspots or filling in text fields. The timer will start when you begin.
+              Enter your email to save your score. Then, follow the on-screen prompts. The timer starts when you begin.
             </p>
-            <button
-              onClick={() => setTestStarted(true)}
-              className="px-12 py-4 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xl rounded-lg shadow-lg transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-4 focus:ring-offset-gray-800 focus:ring-purple-500"
-              aria-label="Start the test now"
-            >
-              Start the Test!
-            </button>
+            <form onSubmit={(e) => { e.preventDefault(); setTestStarted(true); }} className="flex flex-col gap-4">
+              <input
+                  type="email"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  placeholder="your.email@example.com"
+                  required
+                  className="w-full px-4 py-3 bg-gray-900 text-white border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 transition-shadow"
+                  aria-label="Your email for the leaderboard"
+              />
+              <button
+                type="submit"
+                disabled={!userEmail.includes('@')}
+                className="px-12 py-4 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xl rounded-lg shadow-lg transition-all transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-4 focus:ring-offset-gray-800 focus:ring-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed disabled:transform-none disabled:hover:bg-gray-600"
+                aria-label="Start the test now"
+              >
+                Start the Test!
+              </button>
+            </form>
           </div>
         </div>
       ) : (
@@ -357,6 +503,17 @@ export const TestPlayer: React.FC<TestPlayerProps> = ({ frames, onExitTest, shar
                         )}
                         <p className="text-sm mt-2 text-gray-400">You can now review your answers using the navigation buttons below.</p>
                     </div>
+
+                    {testUrl && (
+                      <div className="w-full">
+                        {isSubmittingScore && <p className="text-center text-gray-300">Submitting your score...</p>}
+                        {submissionError && <p className="text-center text-red-400">Error: {submissionError}</p>}
+                        {isFetchingLeaderboard && <p className="text-center text-gray-300">Loading leaderboard...</p>}
+                        {leaderboardError && <p className="text-center text-red-400">{leaderboardError}</p>}
+                        {leaderboardData && <LeaderboardDisplay data={leaderboardData} currentUserEmail={userEmail} formatTime={formatTime} />}
+                      </div>
+                    )}
+                    
                     <div className="flex justify-between items-center w-full p-3 bg-gray-800 rounded-lg shadow-lg">
                         <button
                             onClick={() => navigate('prev')}
