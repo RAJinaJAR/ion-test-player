@@ -202,6 +202,7 @@ const App: React.FC = () => {
                         frames={frames}
                         onExitTest={handleReset}
                         shareableLink={shareableLink}
+                        testUrl={testUrl}
                     />
                 )}
             </main>
