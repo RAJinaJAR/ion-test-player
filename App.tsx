@@ -183,6 +183,11 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-900">
+            <header className="w-full py-4 mb-4">
+                <h1 className="text-4xl md:text-5xl font-extrabold text-center text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">
+                    EvaluationLab
+                </h1>
+            </header>
             <main className="w-full max-w-9xl flex-grow flex items-center justify-center">
                 {gameState === 'uploading' && <FileUpload onFileUpload={handleFileUpload} onUrlSubmit={handleUrlSubmit} />}
                 {gameState === 'processing' && <div className="text-xl">Processing your test...</div>}
