@@ -183,12 +183,17 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-900">
-            <header className="w-full bg-white shadow-md rounded-2xl py-6 mb-6 transition-all duration-300 hover:shadow-lg">
-              <div className="text-center">
-                <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-gray-900 via-gray-700 to-gray-900 bg-clip-text text-transparent tracking-tight">Evaluation<span className="text-indigo-500">Lab</span></h1>
-                <p className="mt-2 text-gray-500 text-sm md:text-base font-medium">Smart. Fast. Insightful Evaluations.</p>
-              </div>
-            </header>
+            <header className="relative w-full backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl py-6 mb-8 shadow-lg hover:shadow-xl transition-all duration-500">
+  <div className="absolute inset-0 bg-gradient-to-r from-white/30 via-transparent to-white/30 opacity-40 rounded-2xl pointer-events-none"></div>
+  <div className="relative text-center">
+    <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-indigo-200 drop-shadow-sm">
+      Evaluation<span className="text-indigo-400">Lab</span>
+    </h1>
+    <p className="mt-2 text-gray-300 text-sm md:text-base font-medium italic tracking-wide">
+      Smart • Fast • Insightful Evaluations
+    </p>
+  </div>
+</header>
             <main className="w-full max-w-9xl flex-grow flex items-center justify-center">
                 {gameState === 'uploading' && <FileUpload onFileUpload={handleFileUpload} onUrlSubmit={handleUrlSubmit} />}
                 {gameState === 'processing' && <div className="text-xl">Processing your test...</div>}
